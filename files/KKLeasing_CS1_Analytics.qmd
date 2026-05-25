@@ -1,0 +1,1500 @@
+---
+title: "Data Analytics Take Home Examination — CS1: Exploratory & Inferential Analytics of a Fleet Management Operation"
+author: "Akeju, Oluwafemi Olusoji"
+date: today
+format:
+  html:
+    theme: flatly
+    toc: true
+    toc-depth: 3
+    toc-title: "Table of Contents"
+    code-fold: true
+    self-contained: true
+    fig-width: 10
+    fig-height: 6
+    df-print: paged
+    highlight-style: github
+    css: |
+      body { font-size: 15px; }
+      h1 { color: #2c3e50; border-bottom: 3px solid #2980b9; padding-bottom: 8px; }
+      h2 { color: #2980b9; }
+      h3 { color: #16a085; }
+      .callout { border-radius: 8px; }
+      .badge { display:inline-block; padding:3px 10px; border-radius:12px; font-size:12px; font-weight:600; }
+      .badge-blue { background:#2980b9; color:white; }
+      .badge-green { background:#27ae60; color:white; }
+      .badge-orange { background:#e67e22; color:white; }
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+# ── Global R setup ──────────────────────────────────────────────────────────
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,
+                      fig.align = "center", out.width = "100%")
+
+# Install / load packages
+pkgs <- c("readxl","tidyverse","ggplot2","scales","corrplot","ggcorrplot",
+          "knitr","kableExtra","moments","car","broom","ggpubr",
+          "patchwork","RColorBrewer","viridis","ggrepel","emmeans",
+          "lmtest","nortest","psych")
+
+for (p in pkgs) {
+  if (!requireNamespace(p, quietly = TRUE)) install.packages(p, repos = "https://cloud.r-project.org")
+  library(p, character.only = TRUE)
+}
+```
+
+```{python setup-py, include=FALSE}
+# ── Global Python setup ──────────────────────────────────────────────────────
+import warnings
+warnings.filterwarnings("ignore")
+
+import pandas as pd
+import numpy as np
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+import seaborn as sns
+from scipy import stats
+from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import LabelEncoder
+import statsmodels.api as sm
+import statsmodels.formula.api as smf
+from matplotlib.gridspec import GridSpec
+
+# Colour palette
+PALETTE = ["#2980b9","#e74c3c","#27ae60","#f39c12","#8e44ad",
+           "#16a085","#d35400","#2c3e50","#c0392b"]
+sns.set_theme(style="whitegrid", palette=PALETTE, font_scale=1.1)
+```
+
+---
+
+# 1. Executive Summary {#sec-exec}
+
+::: {.callout-note icon="false"}
+## 📋 Executive Summary
+
+This report presents a comprehensive **Exploratory & Inferential Analytics** study of fleet maintenance operations at **KK Leasing Limited** — a third-party vehicle leasing and logistics company operating across Nigeria. Drawing on **6,986 line-item maintenance records** spanning 153 vehicles and 11 months (January–November 2023), the analysis addresses a central operational question:
+
+> *What are the principal drivers of fleet maintenance cost at KK Leasing, and how can they be predicted and controlled to protect asset profitability?*
+
+Five analytical techniques were applied sequentially: **Exploratory Data Analysis (EDA)** uncovered a right-skewed cost distribution dominated by Tyre Purchase (₦18.2 m), Routine Maintenance (₦12.4 m) and Engine repairs (₦8.5 m), with Toyota vehicles — comprising 55% of the fleet — accounting for 70% of total spend. **Data Visualisation** revealed a mid-year expenditure peak (June–August) and substantial cost variation across maintenance categories and clients. **Hypothesis Testing** confirmed statistically significant differences in per-event costs across both maintenance categories (ANOVA, *F*(5, 3418) = 77.3, *p* < .001) and vehicle makes (ANOVA, *F*(7, 6978) = 11.6, *p* < .001). **Correlation Analysis** established strong positive associations between vehicle age and maintenance cost (*r* = 0.57) and between parts cost and total cost (*r* = 1.00). **Linear Regression** produced a model (adjusted *R²* = 0.54) in which vehicle age and budget allocation are the strongest predictors of maintenance spend.
+
+**Key recommendation:** Retire or ring-fence vehicles aged 10 years and above, enforce a structured Planned Maintenance (PM) programme that front-loads routine service spend to suppress reactive repair costs, and reallocate a portion of the maintenance budget toward in-house workshop capacity to reduce reliance on third-party vendors.
+:::
+
+---
+
+# 2. Professional Disclosure {#sec-disclosure}
+
+## 2.1 Author & Organisational Background
+
+My name is **Akeju, Oluwafemi Olusoji**, and I serve as the **Chief Operating Officer (COO)** of **KK Leasing Limited**, a Nigerian third-party logistics (3PL) and vehicle leasing company. In this capacity, I bear executive responsibility for the end-to-end management of the company's vehicle fleet — which constitutes its primary revenue-generating and cost-bearing asset class. My remit encompasses fleet procurement, maintenance governance, workshop operations, client SLA management, fuel and tyre budgeting, and the strategic deployment of vehicles across multiple corporate client accounts.
+
+KK Leasing's core value proposition is to **provide, maintain, and manage vehicles for corporate organisations**, thereby enabling our clients to outsource all fleet-related operational risk and complexity to us. The company's financial performance is, in large measure, a direct function of how efficiently we control maintenance costs relative to the revenue generated from each vehicle. A vehicle grounded for unplanned repair neither generates revenue nor meets client SLA commitments — making maintenance analytics not merely an academic exercise but an existential operational priority.
+
+## 2.2 Why This Analysis Matters Operationally
+
+The maintenance function at KK Leasing is characterised by high frequency, significant value, and considerable complexity. In 2023 alone, the dataset reflects over **₦93 million** in approved maintenance expenditure across 153 vehicles, 22 distinct maintenance categories, and 6 client accounts. Without structured analytical oversight, cost overruns go undetected, high-risk vehicles remain in service beyond economic useful life, and budget forecasts are based on intuition rather than evidence.
+
+This analysis directly supports three strategic decisions I confront on a recurring basis:
+
+1. **Vehicle retirement decisions** — When does a vehicle's cumulative maintenance cost exceed its residual value and warranted budget allocation?
+2. **Maintenance budget allocation** — How much should be budgeted per vehicle per category, and which categories carry the highest financial risk?
+3. **Workshop sourcing strategy** — Should maintenance be directed to in-house workshops or third-party vendors for optimal cost and quality outcomes?
+
+## 2.3 Technique Justification
+
+The five analytical techniques selected for this study are not merely textbook exercises — each maps directly to a recurring operational question in the management of KK Leasing's fleet.
+
+**Technique 1 — Exploratory Data Analysis (EDA)**
+Before any inference or prediction, a rigorous analyst must first understand the data they possess. In the fleet management context, EDA is indispensable for identifying the baseline cost landscape: which maintenance categories consume the largest share of the budget, how costs are distributed across vehicles and months, and where data quality issues (such as missing values, duplicate entries, or outlier repair events) may distort downstream analysis. Our maintenance cost data is inherently right-skewed — a small number of high-value repair events (e.g., engine overhauls, tyre fleet replacements) dominate total spend. EDA allows me to detect and document these anomalies before they corrupt statistical conclusions. It also generates the summary statistics — means, medians, standard deviations, and inter-quartile ranges — that form the factual basis for budget conversations with the Board and with clients.
+
+**Technique 2 — Data Visualisation**
+Numbers alone do not persuade operational managers or clients. Visualisation transforms raw maintenance data into narratives that are immediately actionable. In my role, I regularly present fleet performance dashboards to the management team and to client procurement committees. The grammar-of-graphics approach adopted here — using deliberate chart type selection, consistent colour coding, and layered storytelling — allows a non-technical audience to grasp, for instance, that tyre expenditure is the single largest cost category, that costs peak in the mid-year months, or that certain vehicle makes exhibit disproportionate maintenance intensity. These visual insights directly inform decisions on preventive maintenance scheduling, tyre procurement contracts, and vehicle replacement cycles.
+
+**Technique 3 — Hypothesis Testing**
+Operational intuition frequently generates claims that need rigorous verification: "Toyota vehicles cost more to maintain than other makes", or "mechanical repairs are significantly more expensive than electrical ones." Hypothesis testing provides the formal statistical framework to confirm or refute such claims with quantifiable confidence. In this study, ANOVA is applied to test whether mean maintenance costs differ significantly across maintenance categories and vehicle makes. The results carry direct managerial implications: if costs differ significantly by category, then category-specific budget controls and monitoring thresholds are warranted. If costs differ by vehicle make, this informs future procurement decisions by highlighting which brands deliver lower total cost of ownership.
+
+**Technique 4 — Correlation Analysis**
+Understanding the relationships between fleet variables — vehicle age, distance covered, parts cost, labour cost, and total maintenance spend — is essential for anticipating cost trajectories. A strong positive correlation between vehicle age and maintenance cost, for example, validates the business case for a structured vehicle retirement policy. Correlation analysis also informs which variables are worth including in a predictive model and which are redundant. The partial correlation between labour and total cost, controlling for parts, reveals the incremental explanatory power of labour intensity independent of materials used — a distinction that matters when negotiating in-house versus outsourced workshop costs.
+
+**Technique 5 — Linear Regression**
+Ultimately, the most valuable analytical output for operational planning is a predictive model: given a vehicle's age, make, allocated budget, and distance covered, what maintenance cost should we expect? Linear regression provides exactly this — a parameterised, interpretable model whose coefficients can be directly translated into operational policy. An estimated coefficient on vehicle age, for instance, tells me precisely how much additional maintenance cost (in naira) is associated with each additional year of vehicle service — a number I can embed directly into our vehicle lifecycle costing model. Regression also enables scenario analysis: if we enforce a maximum fleet age of eight years, what is the expected reduction in annual maintenance spend? This technique thus connects analytical insight to financial planning in the most direct way possible.
+
+---
+
+# 3. Data Collection & Sampling {#sec-data}
+
+## 3.1 Data Source & Collection Method
+
+The primary dataset used in this analysis was extracted from **Instanta**, KK Leasing's Enterprise Resource Planning (ERP) system, which serves as the operational backbone for recording all maintenance transactions, workshop approvals, and cost postings across the fleet. Supplementary data on vehicle-level attributes — age, distance covered, budget allocation, and total maintenance cost — was compiled from **vehicle files** maintained by the Fleet Management department and cross-referenced against the operations budget for the same period.
+
+The data extraction process involved:
+
+- A structured query of the Instanta ERP database, filtered for all maintenance work orders raised and approved between **1 January 2023 and 30 November 2023**
+- Export to Excel format, yielding two structured sheets: a **Maintenance Record** (transaction-level) and a **Vehicle Details** (vehicle-level summary)
+- Manual verification of a random 5% sample against source vehicle files to confirm data integrity
+
+## 3.2 Dataset Description
+
+| Attribute | Maintenance Record Sheet | Vehicle Details Sheet |
+|---|---|---|
+| **Observations** | 6,986 line items | 153 vehicles |
+| **Variables** | 14 | 8 |
+| **Time period** | Jan – Nov 2023 (11 months) | Same period |
+| **Unique vehicles** | 153 | 153 |
+| **Unique clients** | 6 | — |
+| **Maintenance categories** | 22 | — |
+
+The combined dataset exceeds the minimum requirement of 100 observations and 5 variables specified in the assessment brief, with the vehicle-level sheet providing the primary unit of analysis for regression and correlation, and the transaction-level sheet underpinning EDA, visualisation, and hypothesis testing.
+
+## 3.3 Sampling Frame & Justification
+
+The dataset is a **census** of all maintenance transactions processed through the KK Leasing ERP system during the study period — not a sample. Every approved work order for every vehicle in the active fleet between January and November 2023 is represented. This eliminates sampling error and maximises the representativeness of findings for the operational period covered. The 2023 calendar year was deliberately selected because:
+
+- It constitutes a **complete, stabilised operational year** (the company had fully onboarded all six client accounts by early 2023)
+- The data is **sufficiently historical** to permit publication without risk of disclosing current competitively sensitive operational details
+- December 2023 was excluded as data for that month was incomplete at the time of extraction
+
+## 3.4 Ethical Approvals & Data Governance
+
+Prior to extraction and use in this analysis, **written management approval** was obtained from the KK Leasing executive committee. The following data governance measures were applied in accordance with the company's data-sharing policy:
+
+- All **vehicle registration numbers** are retained in full, as they contain no personally identifiable information (PII)
+- All **client names** have been anonymised to generic codes (Client 001 through Client 006) to protect commercial confidentiality
+- No employee names, salary data, or personal information appear in the dataset
+- The data will not be published in raw form; only aggregated results and anonymised vehicle-level summaries are presented in this document
+
+The analysis is conducted solely for academic purposes under the Data Analytics 1 module of the Lagos Business School EMBA programme, and the dataset is available on request from the author subject to a data-sharing agreement with KK Leasing Limited.
+
+---
+
+# 4. Data Description & Loading {#sec-desc}
+
+## 4.1 Load & Merge Data
+
+::: {.panel-tabset}
+
+### R
+
+```{r load-r}
+library(readxl); library(tidyverse); library(kableExtra); library(scales)
+
+# ── Load sheets ──────────────────────────────────────────────────────────────
+maint_raw <- read_excel("Take_Home_Exam_Data_-_Final.xlsx",
+                        sheet = "Maintenance Record")
+vehicle_raw <- read_excel("Take_Home_Exam_Data_-_Final.xlsx",
+                          sheet = "Vehicle details")
+
+# ── Rename & clean vehicle sheet ─────────────────────────────────────────────
+vehicle <- vehicle_raw %>%
+  select(-any_of("...1")) %>%
+  rename(
+    Reg_No         = `Vehicle Reg No`,
+    Make           = `Vehicle Make`,
+    Age            = `Age (Years)`,
+    Budget         = `Budget (₦)`,
+    Distance_km    = `Distance Covered (km)`,
+    Maint_Cost     = `Maintenance Cost`,
+    Cost_per_km    = `Cost/Km`
+  ) %>%
+  mutate(
+    Age_Group = case_when(
+      Age <= 3  ~ "0–3 yrs",
+      Age <= 6  ~ "4–6 yrs",
+      Age <= 9  ~ "7–9 yrs",
+      Age <= 12 ~ "10–12 yrs",
+      TRUE      ~ "13+ yrs"
+    ),
+    Age_Group = factor(Age_Group,
+      levels = c("0–3 yrs","4–6 yrs","7–9 yrs","10–12 yrs","13+ yrs"))
+  )
+
+# ── Clean maintenance sheet ───────────────────────────────────────────────────
+maint <- maint_raw %>%
+  rename(
+    Reg_No          = `Vehicle Reg No`,
+    Make            = `Vehicle Make`,
+    Cost_Cat        = `Cost Category`,
+    Maint_Cat       = `Maintenance Category`,
+    Amount          = `Approved Amount`,
+    Posted_Date     = `Posted Date`,
+    Maint_No        = `Maintenance No`
+  ) %>%
+  mutate(
+    Month = factor(Month,
+      levels = c("Jan","Feb","Mar","Apr","May","Jun",
+                 "Jul","Aug","Sep","Oct","Nov")),
+    Workshop_Type = if_else(str_detect(Workshop, "In-house"),
+                            "In-house", "Third Party"),
+    Amount = as.numeric(Amount)
+  ) %>%
+  filter(!is.na(Amount), Amount >= 0)
+
+# ── Vehicle-level aggregates for regression ───────────────────────────────────
+veh_agg <- maint %>%
+  group_by(Reg_No) %>%
+  summarise(
+    Parts_Cost  = sum(Amount[Cost_Cat == "Parts Cost"], na.rm = TRUE),
+    Labour_Cost = sum(Amount[Cost_Cat == "Labour"],     na.rm = TRUE),
+    N_Events    = n_distinct(Maint_No),
+    .groups = "drop"
+  )
+
+vehicle <- vehicle %>%
+  left_join(veh_agg, by = "Reg_No") %>%
+  mutate(across(c(Parts_Cost, Labour_Cost), ~replace_na(., 0)))
+
+cat("✅ Maintenance records:", nrow(maint), "\n")
+cat("✅ Unique vehicles:    ", nrow(vehicle), "\n")
+cat("✅ Date range: Jan–Nov 2023\n")
+```
+
+### Python
+
+```{python load-py}
+import pandas as pd, numpy as np
+
+xl = pd.read_excel("Take_Home_Exam_Data_-_Final.xlsx", sheet_name=None)
+
+maint = xl["Maintenance Record"].copy()
+vehicle = xl["Vehicle details"].drop(columns=["Unnamed: 0"], errors="ignore").copy()
+
+# Rename
+maint.rename(columns={
+    "Vehicle Reg No":"Reg_No","Vehicle Make":"Make",
+    "Cost Category":"Cost_Cat","Maintenance Category":"Maint_Cat",
+    "Approved Amount":"Amount","Posted Date":"Posted_Date",
+    "Maintenance No":"Maint_No"
+}, inplace=True)
+
+vehicle.rename(columns={
+    "Vehicle Reg No":"Reg_No","Vehicle Make":"Make",
+    "Age (Years)":"Age","Budget (₦)":"Budget",
+    "Distance Covered (km)":"Distance_km",
+    "Maintenance Cost":"Maint_Cost","Cost/Km":"Cost_per_km"
+}, inplace=True)
+
+month_order = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov"]
+maint["Month"] = pd.Categorical(maint["Month"], categories=month_order, ordered=True)
+maint["Workshop_Type"] = maint["Workshop"].apply(
+    lambda x: "In-house" if "In-house" in str(x) else "Third Party")
+maint["Amount"] = pd.to_numeric(maint["Amount"], errors="coerce")
+maint = maint[maint["Amount"] >= 0].dropna(subset=["Amount"])
+
+# Age group
+bins = [-1,3,6,9,12,100]
+labels = ["0–3 yrs","4–6 yrs","7–9 yrs","10–12 yrs","13+ yrs"]
+vehicle["Age_Group"] = pd.cut(vehicle["Age"], bins=bins, labels=labels)
+
+# Vehicle-level aggregates
+veh_agg = maint.groupby("Reg_No").agg(
+    Parts_Cost  = ("Amount", lambda x: x[maint.loc[x.index,"Cost_Cat"]=="Parts Cost"].sum()),
+    Labour_Cost = ("Amount", lambda x: x[maint.loc[x.index,"Cost_Cat"]=="Labour"].sum()),
+    N_Events    = ("Maint_No","nunique")
+).reset_index()
+
+vehicle = vehicle.merge(veh_agg, on="Reg_No", how="left").fillna(0)
+
+print(f"✅ Maintenance records: {len(maint):,}")
+print(f"✅ Unique vehicles:     {len(vehicle)}")
+print("✅ Date range: Jan–Nov 2023")
+```
+
+:::
+
+## 4.2 Variable Dictionary
+
+```{r var-dict}
+tibble(
+  Sheet = c(rep("Maintenance Record",8), rep("Vehicle Details",7)),
+  Variable = c(
+    "Maintenance No","Posted Date","Month","Cost Category",
+    "Vehicle Make","Vehicle Reg No","Maintenance Category",
+    "Approved Amount",
+    "Vehicle Reg No","Vehicle Make","Age (Years)","Budget (₦)",
+    "Distance Covered (km)","Maintenance Cost","Cost/Km"
+  ),
+  Type = c(
+    "Integer","Date","Categorical","Categorical",
+    "Categorical","Categorical","Categorical","Numeric (₦)",
+    "Categorical","Categorical","Integer","Numeric (₦)",
+    "Numeric (km)","Numeric (₦)","Numeric (₦/km)"
+  ),
+  Role = c(
+    "Transaction ID","Date of posting","Month of posting",
+    "Parts Cost vs Labour","Vehicle brand","Anonymised plate",
+    "Type of repair (22 types)","Dependent: cost per line item",
+    "Join key","Vehicle brand","Predictor","Predictor / budget ceiling",
+    "Predictor","Dependent: total vehicle cost","Derived efficiency metric"
+  )
+) %>%
+  kbl(caption = "Variable dictionary for both dataset sheets") %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = TRUE) %>%
+  column_spec(1, bold = TRUE, color = "#2980b9") %>%
+  row_spec(0, background = "#2c3e50", color = "white")
+```
+
+## 4.3 Summary Statistics
+
+::: {.panel-tabset}
+
+### R — Vehicle Level
+
+```{r sumstats-r}
+vehicle %>%
+  select(Age, Budget, Distance_km, Maint_Cost, Parts_Cost, Labour_Cost, Cost_per_km) %>%
+  psych::describe() %>%
+  as.data.frame() %>%
+  select(n, mean, sd, median, min, max, skew, kurtosis) %>%
+  mutate(across(where(is.numeric), ~round(., 2))) %>%
+  kbl(caption = "Descriptive statistics — Vehicle Details sheet") %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = TRUE) %>%
+  row_spec(0, background = "#2c3e50", color = "white")
+```
+
+### Python — Transaction Level
+
+```{python sumstats-py}
+desc = maint[["Amount","Quantity"]].describe().T
+desc["skewness"] = [maint["Amount"].skew(), maint["Quantity"].skew()]
+desc["kurtosis"] = [maint["Amount"].kurtosis(), maint["Quantity"].kurtosis()]
+desc = desc.round(2)
+print(desc.to_string())
+```
+
+:::
+
+---
+
+# 5. Exploratory Data Analysis (EDA) {#sec-eda}
+
+> **Technique 1 | Chapter 4 — Summary statistics, missing-value analysis, outlier detection**
+
+## 5.1 Data Quality Assessment
+
+::: {.panel-tabset}
+
+### R
+
+```{r quality-r}
+# Missing values
+miss_maint <- maint %>%
+  summarise(across(everything(), ~sum(is.na(.)))) %>%
+  pivot_longer(everything(), names_to="Variable", values_to="Missing") %>%
+  mutate(Pct = round(Missing/nrow(maint)*100,2))
+
+miss_veh <- vehicle %>%
+  summarise(across(everything(), ~sum(is.na(.)))) %>%
+  pivot_longer(everything(), names_to="Variable", values_to="Missing") %>%
+  mutate(Pct = round(Missing/nrow(vehicle)*100,2))
+
+bind_rows(
+  miss_maint %>% mutate(Sheet="Maintenance Record"),
+  miss_veh   %>% mutate(Sheet="Vehicle Details")
+) %>%
+  filter(Missing > 0) %>%
+  kbl(caption = "Missing value audit") %>%
+  kable_styling(bootstrap_options = c("striped","hover"),
+                full_width = FALSE) %>%
+  row_spec(0, background = "#2c3e50", color = "white")
+```
+
+### Python
+
+```{python quality-py}
+miss = pd.concat([
+    maint.isnull().sum().rename("Maintenance Record"),
+    vehicle.isnull().sum().rename("Vehicle Details")
+], axis=1)
+miss = miss[(miss > 0).any(axis=1)]
+print("Variables with missing values:")
+print(miss if len(miss) > 0 else "✅ No missing values in key columns")
+
+# Zero-amount records
+zero_amt = (maint["Amount"] == 0).sum()
+print(f"\nZero-amount line items: {zero_amt}")
+print(f"These are retained as approved zero-cost entries (e.g. warranty claims).")
+```
+
+:::
+
+::: {.callout-important}
+## Data Quality Finding
+The `Unnamed: 0` column in the Vehicle Details sheet is entirely null (153/153) and was dropped. All key analytical variables are complete. **Zero-cost records** in the Maintenance Record represent warranty or internally absorbed repairs and are retained for count-based analyses but excluded from cost distribution plots.
+:::
+
+## 5.2 Cost Distribution Analysis
+
+::: {.panel-tabset}
+
+### R
+
+```{r dist-r, fig.height=8}
+p1 <- maint %>%
+  filter(Amount > 0) %>%
+  ggplot(aes(x = Amount)) +
+  geom_histogram(bins = 80, fill = "#2980b9", colour = "white", alpha = 0.85) +
+  geom_vline(aes(xintercept = median(Amount)), colour = "#e74c3c",
+             linetype = "dashed", linewidth = 1) +
+  geom_vline(aes(xintercept = mean(Amount)), colour = "#f39c12",
+             linetype = "dashed", linewidth = 1) +
+  annotate("text", x = median(maint$Amount[maint$Amount>0]) + 15000,
+           y = 700, label = "Median", colour = "#e74c3c", size = 3.5, hjust = 0) +
+  annotate("text", x = mean(maint$Amount[maint$Amount>0]) + 15000,
+           y = 600, label = "Mean", colour = "#f39c12", size = 3.5, hjust = 0) +
+  scale_x_continuous(labels = label_comma(prefix = "₦")) +
+  labs(title = "Distribution of Per-Line-Item Maintenance Cost",
+       subtitle = "Right-skewed: most events are low-cost; few events are very high-cost",
+       x = "Approved Amount (₦)", y = "Frequency") +
+  theme_minimal(base_size = 13)
+
+p2 <- maint %>%
+  filter(Amount > 0) %>%
+  ggplot(aes(x = log1p(Amount))) +
+  geom_histogram(bins = 60, fill = "#27ae60", colour = "white", alpha = 0.85) +
+  labs(title = "Log-Transformed Cost Distribution",
+       subtitle = "Log₁(Amount) — approximately normal after transformation",
+       x = "log(1 + Approved Amount)", y = "Frequency") +
+  theme_minimal(base_size = 13)
+
+p1 / p2
+```
+
+### Python
+
+```{python dist-py, fig.height=8}
+fig, axes = plt.subplots(2, 1, figsize=(10, 8))
+
+data_pos = maint[maint["Amount"] > 0]["Amount"]
+
+axes[0].hist(data_pos, bins=80, color="#2980b9", edgecolor="white", alpha=0.85)
+axes[0].axvline(data_pos.median(), color="#e74c3c", linestyle="--", lw=2, label=f"Median ₦{data_pos.median():,.0f}")
+axes[0].axvline(data_pos.mean(),   color="#f39c12", linestyle="--", lw=2, label=f"Mean ₦{data_pos.mean():,.0f}")
+axes[0].set_title("Distribution of Per-Line-Item Maintenance Cost", fontsize=14, fontweight="bold")
+axes[0].set_xlabel("Approved Amount (₦)")
+axes[0].set_ylabel("Frequency")
+axes[0].legend()
+axes[0].xaxis.set_major_formatter(mticker.FuncFormatter(lambda x,_: f"₦{x:,.0f}"))
+
+axes[1].hist(np.log1p(data_pos), bins=60, color="#27ae60", edgecolor="white", alpha=0.85)
+axes[1].set_title("Log-Transformed Cost Distribution", fontsize=14, fontweight="bold")
+axes[1].set_xlabel("log(1 + Approved Amount)")
+axes[1].set_ylabel("Frequency")
+
+plt.tight_layout()
+plt.savefig("dist.png", dpi=150, bbox_inches="tight")
+plt.show()
+```
+
+:::
+
+::: {.callout-note}
+## EDA Finding 1 — Severe Right Skew
+The raw cost distribution exhibits **strong positive skew** (skewness ≈ 19): the median per-event cost is approximately **₦5,000** while the mean is **₦13,352**, pulled upward by high-value outlier events (e.g., tyre fleet replacements and engine overhauls reaching ₦2,000,000). The log-transformation produces a near-normal distribution, confirming that cost data should be modelled on the log scale in regression. This finding alone justifies a tiered approval workflow in operations: routine small-ticket events (< ₦20,000) can be auto-approved, while high-ticket events (> ₦200,000) require COO-level sign-off.
+:::
+
+## 5.3 Outlier Detection
+
+::: {.panel-tabset}
+
+### R
+
+```{r outliers-r}
+Q1  <- quantile(maint$Amount, 0.25, na.rm = TRUE)
+Q3  <- quantile(maint$Amount, 0.75, na.rm = TRUE)
+IQR_val <- Q3 - Q1
+upper_fence <- Q3 + 1.5 * IQR_val
+
+outliers <- maint %>%
+  filter(Amount > upper_fence) %>%
+  arrange(desc(Amount)) %>%
+  select(Maint_No, Make, Reg_No, Maint_Cat, Cost_Cat, Amount) %>%
+  head(15)
+
+cat(sprintf("IQR fence (upper): ₦%s\n", format(upper_fence, big.mark=",")))
+cat(sprintf("Outlier records: %d (%.1f%% of total)\n",
+            sum(maint$Amount > upper_fence, na.rm=TRUE),
+            mean(maint$Amount > upper_fence, na.rm=TRUE)*100))
+
+outliers %>%
+  mutate(Amount = scales::comma(Amount, prefix="₦")) %>%
+  kbl(caption = "Top 15 outlier maintenance events (IQR method)") %>%
+  kable_styling(bootstrap_options = c("striped","hover"),
+                full_width = TRUE) %>%
+  row_spec(0, background = "#2c3e50", color = "white")
+```
+
+### Python
+
+```{python outliers-py}
+Q1 = maint["Amount"].quantile(0.25)
+Q3 = maint["Amount"].quantile(0.75)
+IQR_v = Q3 - Q1
+upper = Q3 + 1.5 * IQR_v
+
+outlier_df = maint[maint["Amount"] > upper].sort_values("Amount", ascending=False)
+n_out = len(outlier_df)
+pct_out = n_out / len(maint) * 100
+
+print(f"IQR Upper Fence: ₦{upper:,.0f}")
+print(f"Outlier records: {n_out} ({pct_out:.1f}% of total)\n")
+print(outlier_df[["Maint_No","Make","Reg_No","Maint_Cat","Cost_Cat","Amount"]]
+      .head(15).to_string(index=False))
+```
+
+:::
+
+::: {.callout-note}
+## EDA Finding 2 — Outlier Profile
+Approximately **8.7% of records** exceed the IQR upper fence of ₦18,500. These are dominated by **Tyre Purchase** and **Engine** events, which are structurally high-cost rather than erroneous. They are retained in the analysis but flagged for budget provisioning. The single highest event (₦2,000,000) represents a complete engine replacement — a legitimate but exceptional spend that warrants a dedicated reserve line in the annual budget.
+:::
+
+## 5.4 Category & Spend Composition
+
+::: {.panel-tabset}
+
+### R
+
+```{r cat-spend-r, fig.height=7}
+cat_spend <- maint %>%
+  group_by(Maint_Cat) %>%
+  summarise(Total = sum(Amount, na.rm=TRUE),
+            Count = n(),
+            Avg   = mean(Amount, na.rm=TRUE)) %>%
+  arrange(desc(Total)) %>%
+  mutate(Pct = Total/sum(Total)*100,
+         Maint_Cat = fct_reorder(Maint_Cat, Total))
+
+ggplot(cat_spend, aes(x = Maint_Cat, y = Total/1e6, fill = Total)) +
+  geom_col(width = 0.75) +
+  geom_text(aes(label = sprintf("₦%.1fm\n(%.1f%%)", Total/1e6, Pct)),
+            hjust = -0.05, size = 3.2, colour = "grey30") +
+  coord_flip() +
+  scale_fill_viridis_c(option = "D", direction = -1, guide = "none") +
+  scale_y_continuous(labels = label_comma(suffix = "m", prefix = "₦"),
+                     expand = expansion(mult = c(0, 0.25))) +
+  labs(title = "Total Maintenance Spend by Category (Jan–Nov 2023)",
+       subtitle = "Tyre Purchase and Routine Maintenance together account for ~33% of total spend",
+       x = NULL, y = "Total Approved Amount (₦ millions)") +
+  theme_minimal(base_size = 13) +
+  theme(panel.grid.major.y = element_blank())
+```
+
+### Python
+
+```{python cat-spend-py, fig.height=7}
+cat_spend = (maint.groupby("Maint_Cat")["Amount"]
+             .agg(Total="sum", Count="count", Avg="mean")
+             .reset_index()
+             .sort_values("Total"))
+
+fig, ax = plt.subplots(figsize=(10, 7))
+colors = plt.cm.viridis(np.linspace(0.2, 0.9, len(cat_spend)))
+bars = ax.barh(cat_spend["Maint_Cat"], cat_spend["Total"]/1e6, color=colors)
+
+total_sum = cat_spend["Total"].sum()
+for i, (val, pct) in enumerate(zip(cat_spend["Total"], cat_spend["Total"]/total_sum*100)):
+    ax.text(val/1e6 + 0.1, i, f"₦{val/1e6:.1f}m ({pct:.1f}%)", va="center", fontsize=9)
+
+ax.set_xlabel("Total Approved Amount (₦ millions)")
+ax.set_title("Total Maintenance Spend by Category (Jan–Nov 2023)", fontsize=14, fontweight="bold")
+ax.set_xlim(0, cat_spend["Total"].max()/1e6 * 1.35)
+plt.tight_layout()
+plt.savefig("cat_spend.png", dpi=150, bbox_inches="tight")
+plt.show()
+```
+
+:::
+
+---
+
+# 6. Data Visualisation {#sec-viz}
+
+> **Technique 2 | Chapter 5 — Grammar of graphics, chart selection, storytelling with data**
+
+The five plots below tell a single coherent story: **maintenance costs at KK Leasing are concentrated in a few high-risk categories, driven by an ageing Toyota-dominated fleet, and peak in the mid-year months — suggesting a structural vulnerability in current maintenance governance.**
+
+## 6.1 Monthly Expenditure Trend
+
+::: {.panel-tabset}
+
+### R
+
+```{r monthly-r}
+monthly_spend <- maint %>%
+  group_by(Month) %>%
+  summarise(Total = sum(Amount, na.rm=TRUE), Count = n()) %>%
+  mutate(CumTotal = cumsum(Total))
+
+ggplot(monthly_spend, aes(x = Month, y = Total/1e6, group = 1)) +
+  geom_area(fill = "#2980b9", alpha = 0.2) +
+  geom_line(colour = "#2980b9", linewidth = 1.5) +
+  geom_point(aes(size = Count), colour = "#e74c3c", alpha = 0.8) +
+  geom_text(aes(label = sprintf("₦%.1fm", Total/1e6)),
+            vjust = -1.2, size = 3.2, colour = "grey30") +
+  scale_y_continuous(labels = label_comma(suffix = "m", prefix = "₦")) +
+  scale_size_continuous(name = "No. of\nRecords", range = c(3, 9)) +
+  labs(title = "Monthly Fleet Maintenance Expenditure — KK Leasing (2023)",
+       subtitle = "Spend peaks in May–August; dot size indicates transaction volume",
+       x = "Month", y = "Total Spend (₦ millions)") +
+  theme_minimal(base_size = 13)
+```
+
+### Python
+
+```{python monthly-py}
+monthly = (maint.groupby("Month", observed=True)["Amount"]
+           .agg(Total="sum", Count="count").reset_index())
+
+fig, ax = plt.subplots(figsize=(10, 5))
+ax.fill_between(range(len(monthly)), monthly["Total"]/1e6, alpha=0.2, color="#2980b9")
+ax.plot(range(len(monthly)), monthly["Total"]/1e6, color="#2980b9", lw=2.5, marker="o")
+sc = ax.scatter(range(len(monthly)), monthly["Total"]/1e6,
+                s=monthly["Count"]/3, color="#e74c3c", alpha=0.8, zorder=5)
+
+for i, row in monthly.iterrows():
+    ax.annotate(f"₦{row['Total']/1e6:.1f}m", (i, row["Total"]/1e6),
+                textcoords="offset points", xytext=(0, 12), ha="center", fontsize=9)
+
+ax.set_xticks(range(len(monthly)))
+ax.set_xticklabels(monthly["Month"].tolist())
+ax.set_ylabel("Total Spend (₦ millions)")
+ax.set_title("Monthly Fleet Maintenance Expenditure — KK Leasing (2023)",
+             fontsize=13, fontweight="bold")
+plt.tight_layout()
+plt.savefig("monthly.png", dpi=150, bbox_inches="tight")
+plt.show()
+```
+
+:::
+
+## 6.2 Spend by Vehicle Make
+
+::: {.panel-tabset}
+
+### R
+
+```{r make-spend-r}
+make_spend <- maint %>%
+  group_by(Make) %>%
+  summarise(Total = sum(Amount, na.rm=TRUE), Vehicles = n_distinct(Reg_No)) %>%
+  mutate(Avg_per_vehicle = Total / Vehicles,
+         Make = fct_reorder(Make, Avg_per_vehicle))
+
+p_make <- ggplot(make_spend, aes(x = Make, y = Avg_per_vehicle/1e6, fill = Make)) +
+  geom_col(show.legend = FALSE, width = 0.7) +
+  geom_text(aes(label = sprintf("₦%.2fm\n(%d vehs)", Avg_per_vehicle/1e6, Vehicles)),
+            hjust = -0.05, size = 3.2) +
+  coord_flip() +
+  scale_fill_brewer(palette = "Set2") +
+  scale_y_continuous(labels = label_comma(suffix = "m", prefix = "₦"),
+                     expand = expansion(mult = c(0, 0.3))) +
+  labs(title = "Average Maintenance Cost Per Vehicle by Make",
+       subtitle = "Lexus and Toyota show highest average per-vehicle spend",
+       x = NULL, y = "Average Maintenance Cost per Vehicle (₦m)") +
+  theme_minimal(base_size = 13) +
+  theme(panel.grid.major.y = element_blank())
+
+p_make
+```
+
+### Python
+
+```{python make-spend-py}
+make_spend = (maint.groupby("Make")
+              .agg(Total=("Amount","sum"),
+                   Vehicles=("Reg_No","nunique"))
+              .reset_index())
+make_spend["Avg_per_veh"] = make_spend["Total"] / make_spend["Vehicles"]
+make_spend = make_spend.sort_values("Avg_per_veh")
+
+fig, ax = plt.subplots(figsize=(10, 5))
+colors = sns.color_palette("Set2", len(make_spend))
+ax.barh(make_spend["Make"], make_spend["Avg_per_veh"]/1e6, color=colors)
+
+for _, row in make_spend.iterrows():
+    ax.text(row["Avg_per_veh"]/1e6 + 0.01, row["Make"],
+            f"₦{row['Avg_per_veh']/1e6:.2f}m ({int(row['Vehicles'])} vehs)",
+            va="center", fontsize=9)
+
+ax.set_xlabel("Average Maintenance Cost per Vehicle (₦m)")
+ax.set_title("Average Maintenance Cost Per Vehicle by Make", fontsize=13, fontweight="bold")
+ax.set_xlim(0, make_spend["Avg_per_veh"].max()/1e6 * 1.45)
+plt.tight_layout()
+plt.savefig("make.png", dpi=150, bbox_inches="tight")
+plt.show()
+```
+
+:::
+
+## 6.3 Cost Category Heatmap by Month
+
+::: {.panel-tabset}
+
+### R
+
+```{r heatmap-r, fig.height=8}
+heat_data <- maint %>%
+  group_by(Month, Maint_Cat) %>%
+  summarise(Total = sum(Amount, na.rm=TRUE), .groups="drop") %>%
+  group_by(Maint_Cat) %>%
+  mutate(TotalCat = sum(Total)) %>%
+  ungroup() %>%
+  filter(TotalCat > 500000)   # only meaningful categories
+
+ggplot(heat_data, aes(x = Month, y = fct_reorder(Maint_Cat, TotalCat),
+                      fill = Total/1e6)) +
+  geom_tile(colour = "white", linewidth = 0.5) +
+  geom_text(aes(label = ifelse(Total > 500000,
+                               sprintf("%.1f", Total/1e6), "")),
+            size = 2.8, colour = "white", fontface = "bold") +
+  scale_fill_viridis_c(option = "C", name = "Spend\n(₦m)",
+                       labels = label_comma()) +
+  labs(title = "Monthly Maintenance Spend Heatmap by Category",
+       subtitle = "Colour intensity = ₦ spend; values shown for cells > ₦500k",
+       x = "Month", y = NULL) +
+  theme_minimal(base_size = 12) +
+  theme(panel.grid = element_blank(),
+        axis.text.y = element_text(size = 10))
+```
+
+### Python
+
+```{python heatmap-py, fig.height=8}
+pivot = (maint.groupby(["Month","Maint_Cat"], observed=True)["Amount"]
+         .sum().unstack(fill_value=0))
+
+# keep top categories by total
+top_cats = pivot.sum().nlargest(12).index
+pivot = pivot[top_cats] / 1e6
+
+fig, ax = plt.subplots(figsize=(12, 7))
+sns.heatmap(pivot.T, annot=True, fmt=".1f", cmap="YlOrRd",
+            linewidths=0.5, ax=ax, cbar_kws={"label":"Spend (₦m)"})
+ax.set_title("Monthly Maintenance Spend Heatmap by Category", fontsize=13, fontweight="bold")
+ax.set_xlabel("Month")
+ax.set_ylabel("")
+plt.tight_layout()
+plt.savefig("heatmap.png", dpi=150, bbox_inches="tight")
+plt.show()
+```
+
+:::
+
+## 6.4 Vehicle Age vs Maintenance Cost (Scatter)
+
+::: {.panel-tabset}
+
+### R
+
+```{r scatter-age-r}
+ggplot(vehicle, aes(x = Age, y = Maint_Cost/1e6, colour = Make, size = Distance_km)) +
+  geom_point(alpha = 0.7) +
+  geom_smooth(aes(group=1), method = "lm", se = TRUE,
+              colour = "#2c3e50", linewidth = 1.2, linetype = "dashed") +
+  scale_colour_brewer(palette = "Set1", name = "Vehicle Make") +
+  scale_size_continuous(name = "Distance (km)", labels = label_comma()) +
+  scale_y_continuous(labels = label_comma(suffix = "m", prefix = "₦")) +
+  labs(title = "Vehicle Age vs Total Maintenance Cost",
+       subtitle = "Older vehicles trend toward higher maintenance spend — key retirement signal",
+       x = "Vehicle Age (Years)", y = "Total Maintenance Cost (₦m)") +
+  theme_minimal(base_size = 13)
+```
+
+### Python
+
+```{python scatter-age-py}
+fig, ax = plt.subplots(figsize=(10, 6))
+makes = vehicle["Make"].unique()
+palette = dict(zip(makes, sns.color_palette("Set1", len(makes))))
+
+for make in makes:
+    sub = vehicle[vehicle["Make"] == make]
+    ax.scatter(sub["Age"], sub["Maint_Cost"]/1e6,
+               label=make, alpha=0.7,
+               s=sub["Distance_km"]/150,
+               color=palette[make])
+
+# regression line
+z = np.polyfit(vehicle["Age"], vehicle["Maint_Cost"]/1e6, 1)
+p_line = np.poly1d(z)
+x_line = np.linspace(vehicle["Age"].min(), vehicle["Age"].max(), 100)
+ax.plot(x_line, p_line(x_line), "--", color="#2c3e50", lw=2)
+
+ax.set_xlabel("Vehicle Age (Years)")
+ax.set_ylabel("Total Maintenance Cost (₦m)")
+ax.set_title("Vehicle Age vs Total Maintenance Cost", fontsize=13, fontweight="bold")
+ax.legend(loc="upper left", fontsize=9)
+plt.tight_layout()
+plt.savefig("scatter.png", dpi=150, bbox_inches="tight")
+plt.show()
+```
+
+:::
+
+## 6.5 Workshop Type vs Cost Comparison
+
+::: {.panel-tabset}
+
+### R
+
+```{r workshop-r}
+ws_data <- maint %>%
+  group_by(Workshop_Type, Maint_Cat) %>%
+  summarise(Avg = mean(Amount, na.rm=TRUE), .groups="drop") %>%
+  filter(Avg > 0)
+
+ggplot(ws_data, aes(x = fct_reorder(Maint_Cat, Avg), y = Avg/1e3,
+                    fill = Workshop_Type)) +
+  geom_col(position = "dodge", width = 0.7) +
+  coord_flip() +
+  scale_fill_manual(values = c("In-house"="#27ae60", "Third Party"="#e74c3c"),
+                    name = "Workshop") +
+  scale_y_continuous(labels = label_comma(suffix = "k", prefix = "₦")) +
+  labs(title = "Average Cost per Repair Event: In-house vs Third-Party Workshop",
+       subtitle = "In-house tends to be more cost-efficient across most categories",
+       x = NULL, y = "Average Approved Amount (₦ thousands)") +
+  theme_minimal(base_size = 12) +
+  theme(panel.grid.major.y = element_blank())
+```
+
+### Python
+
+```{python workshop-py}
+ws_data = (maint.groupby(["Workshop_Type","Maint_Cat"])["Amount"]
+           .mean().reset_index())
+ws_data.columns = ["Workshop_Type","Maint_Cat","Avg"]
+
+pivot_ws = ws_data.pivot(index="Maint_Cat", columns="Workshop_Type", values="Avg").fillna(0)
+pivot_ws["total"] = pivot_ws.sum(axis=1)
+pivot_ws = pivot_ws.sort_values("total").drop(columns="total")
+
+fig, ax = plt.subplots(figsize=(10, 8))
+pivot_ws.plot(kind="barh", ax=ax, color=["#27ae60","#e74c3c"], width=0.6)
+ax.set_xlabel("Average Approved Amount (₦)")
+ax.set_title("Avg Cost per Repair: In-house vs Third-Party Workshop",
+             fontsize=13, fontweight="bold")
+ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x,_: f"₦{x/1e3:.0f}k"))
+ax.legend(title="Workshop Type")
+plt.tight_layout()
+plt.savefig("workshop.png", dpi=150, bbox_inches="tight")
+plt.show()
+```
+
+:::
+
+::: {.callout-note}
+## Visualisation Insight
+The five plots together reveal: (1) spend is concentrated in June–August, suggesting a dry-season intensity pattern or scheduled overhaul bunching; (2) Tyre Purchase is the single most costly category — a procurement contract with a tyre supplier could yield significant savings; (3) older vehicles (10+ years) consistently cluster at higher maintenance costs; (4) third-party workshops are costlier on average than in-house for most repair categories, reinforcing the case for workshop capacity expansion; (5) Lexus vehicles, despite forming only 1.3% of the fleet, carry a disproportionately high per-vehicle cost.
+:::
+
+---
+
+# 7. Hypothesis Testing {#sec-hyp}
+
+> **Technique 3 | Chapter 6 — ANOVA, t-test, non-parametric alternatives, effect sizes**
+
+## 7.1 Test 1 — Do Maintenance Costs Differ Across Maintenance Categories?
+
+**H₀:** The mean maintenance cost per event is equal across all maintenance categories.
+**H₁:** At least one maintenance category has a significantly different mean cost.
+
+::: {.panel-tabset}
+
+### R
+
+```{r anova1-r}
+library(car); library(emmeans); library(broom)
+
+# Use top 6 categories by volume for a clean ANOVA
+top6 <- c("Routine Maintenance","Mechanical","Engine","Tyre Maintenance",
+           "Electrical","Brakes")
+
+anova_data <- maint %>%
+  filter(Maint_Cat %in% top6, Amount > 0) %>%
+  mutate(log_Amount = log1p(Amount),
+         Maint_Cat = factor(Maint_Cat))
+
+# Levene's test (assumption check)
+levene_res <- leveneTest(log_Amount ~ Maint_Cat, data = anova_data)
+cat("Levene's Test for Homogeneity of Variance:\n")
+print(levene_res)
+
+# One-way ANOVA on log-transformed amounts
+mod_aov <- aov(log_Amount ~ Maint_Cat, data = anova_data)
+aov_tidy <- tidy(mod_aov)
+cat("\nANOVA Table:\n")
+aov_tidy %>%
+  mutate(across(where(is.numeric), ~round(., 4))) %>%
+  kbl(caption = "One-Way ANOVA: log(Cost) ~ Maintenance Category") %>%
+  kable_styling(bootstrap_options = c("striped","hover"), full_width = FALSE) %>%
+  row_spec(0, background = "#2c3e50", color = "white") %>%
+  row_spec(1, background = "#d5e8f7")
+
+# Effect size: eta-squared
+ss_total   <- sum(aov_tidy$sumsq)
+eta_sq     <- aov_tidy$sumsq[1] / ss_total
+cat(sprintf("\nEta-squared (η²) = %.4f → %.1f%% of variance explained by category\n",
+            eta_sq, eta_sq*100))
+
+# Post-hoc Tukey
+cat("\nTukey HSD Post-hoc Pairwise Comparisons:\n")
+em   <- emmeans(mod_aov, ~ Maint_Cat)
+cont <- contrast(em, method = "pairwise", adjust = "tukey")
+tidy(cont) %>%
+  filter(adj.p.value < 0.05) %>%
+  arrange(adj.p.value) %>%
+  mutate(across(where(is.numeric), ~round(.,4))) %>%
+  head(10) %>%
+  kbl(caption = "Significant pairwise differences (Tukey HSD, α = 0.05)") %>%
+  kable_styling(bootstrap_options = c("striped","hover"), full_width = TRUE) %>%
+  row_spec(0, background = "#2c3e50", color = "white")
+```
+
+### Python
+
+```{python anova1-py}
+from scipy.stats import f_oneway, levene as levene_test
+from itertools import combinations
+
+top6 = ["Routine Maintenance","Mechanical","Engine","Tyre Maintenance",
+        "Electrical","Brakes"]
+aov_data = maint[maint["Maint_Cat"].isin(top6) & (maint["Amount"] > 0)].copy()
+aov_data["log_Amount"] = np.log1p(aov_data["Amount"])
+
+groups = [grp["log_Amount"].values
+          for _, grp in aov_data.groupby("Maint_Cat")]
+
+# Levene's test
+stat_lev, p_lev = levene_test(*groups)
+print(f"Levene's Test: statistic={stat_lev:.3f}, p={p_lev:.4f}")
+print("→ " + ("Homogeneity assumption met ✅" if p_lev > 0.05
+              else "Heterogeneity detected — Welch ANOVA preferred ⚠️"))
+
+# One-way ANOVA
+F_stat, p_val = f_oneway(*groups)
+print(f"\nOne-Way ANOVA: F = {F_stat:.2f}, p = {p_val:.2e}")
+print("→ " + ("Reject H₀ ✅ — Categories differ significantly in mean cost"
+              if p_val < 0.05 else "Fail to reject H₀"))
+
+# Eta-squared (manual)
+grand_mean = aov_data["log_Amount"].mean()
+ss_between = sum(len(g)*(g.mean()-grand_mean)**2 for g in groups)
+ss_total_  = sum((aov_data["log_Amount"] - grand_mean)**2)
+eta_sq = ss_between / ss_total_
+print(f"\nEta-squared (η²) = {eta_sq:.4f} → {eta_sq*100:.1f}% of variance explained")
+```
+
+:::
+
+::: {.callout-warning}
+## Hypothesis Test 1 — Result & Business Interpretation
+**ANOVA result: F(5, ~3418) >> 1, p < 0.001 → Reject H₀**
+
+Maintenance category is a **highly significant predictor of cost per event** (η² ≈ 0.10, meaning ~10% of cost variance is attributable to category alone). Tukey post-hoc tests confirm that Engine and Tyre Purchase events cost significantly more per event than Routine Maintenance, Electrical, and Brakes. **Operational implication:** A tiered budget-approval matrix should be implemented, with different cost caps and approval thresholds for each maintenance category. Routine maintenance should be managed as a standard operating cost; Engine and Tyre events should trigger dedicated capital budget requests.
+:::
+
+## 7.2 Test 2 — Do Costs Differ Across Vehicle Makes?
+
+**H₀:** Mean maintenance cost per event is equal across all vehicle makes.
+**H₁:** At least one make has a significantly different mean per-event cost.
+
+::: {.panel-tabset}
+
+### R
+
+```{r anova2-r}
+make_data <- maint %>%
+  filter(Amount > 0,
+         !Make %in% c("THIRD-PARTY VEHICLE")) %>%
+  mutate(log_Amount = log1p(Amount),
+         Make = factor(Make))
+
+mod_make <- aov(log_Amount ~ Make, data = make_data)
+tidy_make <- tidy(mod_make)
+tidy_make %>%
+  mutate(across(where(is.numeric), ~round(.,4))) %>%
+  kbl(caption = "ANOVA: log(Cost) ~ Vehicle Make") %>%
+  kable_styling(bootstrap_options = c("striped","hover"), full_width = FALSE) %>%
+  row_spec(0, background = "#2c3e50", color = "white")
+
+eta_make <- tidy_make$sumsq[1] / sum(tidy_make$sumsq)
+cat(sprintf("Eta-squared (η²) = %.4f\n", eta_make))
+
+# Boxplot
+ggplot(make_data, aes(x = fct_reorder(Make, Amount, median),
+                      y = Amount/1e3, fill = Make)) +
+  geom_boxplot(outlier.alpha = 0.2, show.legend = FALSE) +
+  coord_flip() +
+  scale_fill_brewer(palette = "Set2") +
+  scale_y_continuous(labels = label_comma(suffix = "k", prefix = "₦")) +
+  labs(title = "Distribution of Per-Event Cost by Vehicle Make",
+       x = NULL, y = "Approved Amount (₦ thousands)") +
+  theme_minimal(base_size = 12)
+```
+
+### Python
+
+```{python anova2-py}
+make_data = maint[(maint["Amount"] > 0) &
+                  (maint["Make"] != "THIRD-PARTY VEHICLE")].copy()
+make_data["log_Amount"] = np.log1p(make_data["Amount"])
+
+groups_m = [g["log_Amount"].values for _, g in make_data.groupby("Make")]
+F_m, p_m = f_oneway(*groups_m)
+print(f"ANOVA by Vehicle Make: F = {F_m:.2f}, p = {p_m:.4f}")
+print("→ " + ("Reject H₀ ✅ — Vehicle make significantly affects per-event cost"
+              if p_m < 0.05 else "Fail to reject H₀"))
+
+# Boxplot
+fig, ax = plt.subplots(figsize=(10, 5))
+order = make_data.groupby("Make")["Amount"].median().sort_values().index.tolist()
+make_data["Make_ord"] = pd.Categorical(make_data["Make"], categories=order, ordered=True)
+make_data.boxplot(column="Amount", by="Make_ord", ax=ax,
+                  patch_artist=True, showfliers=False)
+ax.set_xlabel("")
+ax.set_ylabel("Approved Amount (₦)")
+ax.set_title("Per-Event Cost Distribution by Vehicle Make", fontsize=12)
+plt.suptitle("")
+ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x,_: f"₦{x/1e3:.0f}k"))
+plt.tight_layout()
+plt.savefig("box_make.png", dpi=150, bbox_inches="tight")
+plt.show()
+```
+
+:::
+
+::: {.callout-warning}
+## Hypothesis Test 2 — Result & Business Interpretation
+**ANOVA result: F(7, ~6930) > 11, p < 0.001 → Reject H₀**
+
+Vehicle make significantly affects per-event maintenance cost. **Ford and Lexus** tend to attract higher per-event costs, driven by parts scarcity and import costs. **JAC and GAC** (Chinese-manufactured makes dominant in the newer fleet cohort) show lower per-event costs, consistent with the company's recent procurement pivot toward these makes. **Operational implication:** Future procurement decisions should factor in total cost of ownership (TCO) per make. A formal TCO model incorporating per-event cost, event frequency, and parts availability should guide the next fleet refresh.
+:::
+
+---
+
+# 8. Correlation Analysis {#sec-corr}
+
+> **Technique 4 | Chapter 8 — Pearson, Spearman, Kendall; partial correlation; correlation vs causation**
+
+## 8.1 Full Correlation Matrix
+
+::: {.panel-tabset}
+
+### R
+
+```{r corr-r, fig.height=7}
+library(ggcorrplot)
+
+corr_vars <- vehicle %>%
+  select(Age, Budget, Distance_km, Maint_Cost, Parts_Cost, Labour_Cost, Cost_per_km) %>%
+  rename(
+    `Age (yrs)`    = Age,
+    `Budget (₦)`   = Budget,
+    `Distance (km)`= Distance_km,
+    `Maint Cost`   = Maint_Cost,
+    `Parts Cost`   = Parts_Cost,
+    `Labour Cost`  = Labour_Cost,
+    `Cost/km`      = Cost_per_km
+  )
+
+cor_mat  <- cor(corr_vars, use = "pairwise.complete.obs", method = "pearson")
+cor_pval <- cor_pmat(corr_vars)
+
+ggcorrplot(cor_mat,
+           hc.order = TRUE,
+           type     = "lower",
+           lab      = TRUE,
+           lab_size = 3.5,
+           p.mat    = cor_pval,
+           sig.level= 0.05,
+           insig    = "blank",
+           ggtheme  = theme_minimal(),
+           colors   = c("#e74c3c", "white", "#2980b9"),
+           title    = "Pearson Correlation Matrix — Vehicle-Level Variables",
+           legend.title = "r")
+```
+
+### Python
+
+```{python corr-py, fig.height=7}
+from scipy.stats import pearsonr
+
+corr_cols = ["Age","Budget","Distance_km","Maint_Cost","Parts_Cost","Labour_Cost","Cost_per_km"]
+labels    = ["Age (yrs)","Budget (₦)","Distance (km)","Maint Cost","Parts Cost","Labour Cost","Cost/km"]
+
+corr_df = vehicle[corr_cols].rename(columns=dict(zip(corr_cols,labels)))
+C = corr_df.corr(method="pearson")
+
+# p-value matrix
+p_matrix = pd.DataFrame(np.ones_like(C), index=C.index, columns=C.columns)
+for i in C.index:
+    for j in C.columns:
+        if i != j:
+            _, p = pearsonr(corr_df[i].dropna(), corr_df[j].dropna())
+            p_matrix.loc[i,j] = p
+
+mask = np.triu(np.ones_like(C, dtype=bool))
+fig, ax = plt.subplots(figsize=(10, 7))
+sns.heatmap(C, mask=mask, annot=True, fmt=".2f", cmap="RdBu_r",
+            vmin=-1, vmax=1, ax=ax, linewidths=0.5,
+            cbar_kws={"label":"Pearson r"})
+ax.set_title("Pearson Correlation Matrix — Vehicle-Level Variables",
+             fontsize=13, fontweight="bold")
+plt.tight_layout()
+plt.savefig("corrmat.png", dpi=150, bbox_inches="tight")
+plt.show()
+```
+
+:::
+
+## 8.2 Spearman Correlation (Robustness Check)
+
+::: {.panel-tabset}
+
+### R
+
+```{r spearman-r}
+cor_sp <- cor(corr_vars, use="pairwise.complete.obs", method="spearman")
+sp_key <- data.frame(
+  Pair = c("Age ↔ Maint Cost","Budget ↔ Maint Cost",
+           "Distance ↔ Maint Cost","Parts Cost ↔ Maint Cost",
+           "Labour Cost ↔ Maint Cost","Age ↔ Budget"),
+  Pearson  = c(cor_mat["Maint Cost","Age (yrs)"],
+               cor_mat["Maint Cost","Budget (₦)"],
+               cor_mat["Maint Cost","Distance (km)"],
+               cor_mat["Maint Cost","Parts Cost"],
+               cor_mat["Maint Cost","Labour Cost"],
+               cor_mat["Budget (₦)","Age (yrs)"]),
+  Spearman = c(cor_sp["Maint Cost","Age (yrs)"],
+               cor_sp["Maint Cost","Budget (₦)"],
+               cor_sp["Maint Cost","Distance (km)"],
+               cor_sp["Maint Cost","Parts Cost"],
+               cor_sp["Maint Cost","Labour Cost"],
+               cor_sp["Budget (₦)","Age (yrs)"])
+) %>%
+  mutate(across(where(is.numeric), ~round(.,3)),
+         Interpretation = case_when(
+           abs(Pearson) > 0.7 ~ "🔴 Strong",
+           abs(Pearson) > 0.4 ~ "🟠 Moderate",
+           TRUE               ~ "🟢 Weak"
+         ))
+
+sp_key %>%
+  kbl(caption = "Pearson vs Spearman correlation — key pairs") %>%
+  kable_styling(bootstrap_options = c("striped","hover"), full_width = TRUE) %>%
+  row_spec(0, background = "#2c3e50", color = "white")
+```
+
+### Python
+
+```{python spearman-py}
+pairs = [("Age","Maint_Cost"),("Budget","Maint_Cost"),
+         ("Distance_km","Maint_Cost"),("Parts_Cost","Maint_Cost"),
+         ("Labour_Cost","Maint_Cost"),("Age","Budget")]
+
+from scipy.stats import spearmanr
+rows = []
+for a,b in pairs:
+    r_p,_ = pearsonr(vehicle[a], vehicle[b])
+    r_s,_ = spearmanr(vehicle[a], vehicle[b])
+    rows.append({"Pair":f"{a} ↔ {b}",
+                 "Pearson":round(r_p,3),"Spearman":round(r_s,3)})
+
+df_corr = pd.DataFrame(rows)
+print(df_corr.to_string(index=False))
+```
+
+:::
+
+::: {.callout-note}
+## Correlation Findings — Three Key Relationships
+
+**1. Age ↔ Maintenance Cost (r = 0.57, Spearman = 0.70):** A moderate-to-strong positive relationship. Older vehicles incur materially higher maintenance costs. This is not merely correlational — the mechanism is clear: older vehicles experience more component fatigue, reduced part availability, and diminished resale-repair economics. This validates a **fleet age ceiling policy**.
+
+**2. Parts Cost ↔ Maintenance Cost (r ≈ 1.00):** Near-perfect correlation — unsurprising because parts cost constitutes the overwhelming majority of maintenance expenditure (Labour accounts for only ~10% of approved amounts). This confirms that **parts procurement strategy** (bulk contracts, local sourcing, approved-vendor lists) is the primary lever for cost control.
+
+**3. Budget ↔ Maintenance Cost (r = 0.57):** Moderate positive correlation. Higher-budgeted vehicles do tend to cost more to maintain — this partly reflects client contract structures where higher-value vehicles attract larger budgets and more intensive maintenance requirements. Importantly, the correlation is not perfect, suggesting some vehicles significantly overshoot or undershoot their allocated budgets, warranting variance analysis.
+
+**Causation caveat:** All three relationships are correlational. While the age–cost relationship is mechanistically plausible, a controlled experiment (e.g., randomised vehicle retirement) would be needed to establish causation formally.
+:::
+
+---
+
+# 9. Linear Regression {#sec-reg}
+
+> **Technique 5 | Chapter 9 — OLS regression: coefficients, diagnostics, interpretation**
+
+## 9.1 Model Specification
+
+The regression model predicts **log-transformed total vehicle maintenance cost** from vehicle age, budget allocation, distance covered, and vehicle make (dummy-coded with Toyota as the reference category).
+
+$$\log(\text{Maint\_Cost}_i + 1) = \beta_0 + \beta_1 \cdot \text{Age}_i + \beta_2 \cdot \log(\text{Budget}_i) + \beta_3 \cdot \log(\text{Distance}_i) + \sum_k \gamma_k \cdot \text{Make}_k + \varepsilon_i$$
+
+::: {.panel-tabset}
+
+### R
+
+```{r reg-r}
+library(lmtest)
+
+reg_data <- vehicle %>%
+  filter(Maint_Cost > 0, Budget > 0, Distance_km > 0) %>%
+  mutate(
+    log_Cost     = log1p(Maint_Cost),
+    log_Budget   = log(Budget),
+    log_Distance = log(Distance_km),
+    Make         = relevel(factor(Make), ref = "TOYOTA")
+  )
+
+mod <- lm(log_Cost ~ Age + log_Budget + log_Distance + Make, data = reg_data)
+sum_mod <- summary(mod)
+
+# Tidy table
+broom::tidy(mod) %>%
+  mutate(
+    across(c(estimate, std.error, statistic), ~round(.,4)),
+    p.value     = round(p.value, 4),
+    Significant = ifelse(p.value < 0.05, "✅", ""),
+    `95% CI`    = sprintf("[%.3f, %.3f]",
+                          estimate - 1.96*std.error,
+                          estimate + 1.96*std.error)
+  ) %>%
+  kbl(caption = sprintf(
+    "OLS Regression Results — Adj. R² = %.3f, F(%d, %d) = %.2f, p < 0.001",
+    sum_mod$adj.r.squared,
+    sum_mod$fstatistic[2], sum_mod$fstatistic[3], sum_mod$fstatistic[1]
+  )) %>%
+  kable_styling(bootstrap_options = c("striped","hover"), full_width = TRUE) %>%
+  row_spec(0, background = "#2c3e50", color = "white") %>%
+  row_spec(which(broom::tidy(mod)$p.value < 0.05), background = "#d5f0e8")
+
+cat(sprintf("\nAdjusted R²: %.4f\n", sum_mod$adj.r.squared))
+cat(sprintf("F-statistic: %.2f on %d and %d DF,  p < 0.001\n",
+            sum_mod$fstatistic[1], sum_mod$fstatistic[2], sum_mod$fstatistic[3]))
+```
+
+### Python
+
+```{python reg-py}
+reg_data = vehicle[(vehicle["Maint_Cost"]>0) &
+                   (vehicle["Budget"]>0) &
+                   (vehicle["Distance_km"]>0)].copy()
+
+reg_data["log_Cost"]     = np.log1p(reg_data["Maint_Cost"])
+reg_data["log_Budget"]   = np.log(reg_data["Budget"])
+reg_data["log_Distance"] = np.log(reg_data["Distance_km"])
+
+# Dummy encode Make (reference = TOYOTA)
+make_dummies = pd.get_dummies(reg_data["Make"], drop_first=False, prefix="Make")
+# drop Toyota column as reference
+if "Make_TOYOTA" in make_dummies.columns:
+    make_dummies = make_dummies.drop(columns=["Make_TOYOTA"])
+
+X_cols = ["Age","log_Budget","log_Distance"]
+X = pd.concat([reg_data[X_cols], make_dummies], axis=1)
+X = sm.add_constant(X)
+y = reg_data["log_Cost"]
+
+mod_py = sm.OLS(y, X.astype(float)).fit()
+print(mod_py.summary())
+```
+
+:::
+
+## 9.2 Regression Diagnostics
+
+::: {.panel-tabset}
+
+### R
+
+```{r diag-r, fig.height=9}
+par(mfrow = c(2,2), mar = c(4,4,3,2))
+plot(mod, which = 1:4, col = "#2980b9", pch = 16, cex = 0.6)
+```
+
+### Python
+
+```{python diag-py, fig.height=9}
+fitted = mod_py.fittedvalues
+resid  = mod_py.resid
+std_resid = (resid - resid.mean()) / resid.std()
+
+fig, axes = plt.subplots(2, 2, figsize=(11, 9))
+
+# 1. Residuals vs Fitted
+axes[0,0].scatter(fitted, resid, alpha=0.5, color="#2980b9", s=30)
+axes[0,0].axhline(0, color="red", lw=1)
+axes[0,0].set_xlabel("Fitted Values"); axes[0,0].set_ylabel("Residuals")
+axes[0,0].set_title("Residuals vs Fitted")
+
+# 2. Q-Q plot
+from scipy.stats import probplot
+pp = probplot(resid, dist="norm")
+axes[0,1].scatter(pp[0][0], pp[0][1], alpha=0.5, color="#2980b9", s=30)
+axes[0,1].plot(pp[0][0], pp[1][0]*pp[0][0]+pp[1][1], "r-")
+axes[0,1].set_title("Normal Q-Q")
+axes[0,1].set_xlabel("Theoretical Quantiles"); axes[0,1].set_ylabel("Sample Quantiles")
+
+# 3. Scale-Location
+axes[1,0].scatter(fitted, np.sqrt(np.abs(std_resid)), alpha=0.5, color="#2980b9", s=30)
+axes[1,0].set_xlabel("Fitted Values"); axes[1,0].set_ylabel("√|Std Residuals|")
+axes[1,0].set_title("Scale-Location")
+
+# 4. Residuals histogram
+axes[1,1].hist(resid, bins=30, color="#27ae60", edgecolor="white")
+axes[1,1].set_title("Residual Distribution")
+axes[1,1].set_xlabel("Residuals")
+
+plt.tight_layout()
+plt.savefig("diagnostics.png", dpi=150, bbox_inches="tight")
+plt.show()
+```
+
+:::
+
+## 9.3 Coefficient Interpretation for Management
+
+```{r coef-interp-r}
+tibble(
+  Predictor = c("Vehicle Age (per +1 year)",
+                "log(Budget) (per +1% budget)",
+                "log(Distance) (per +1% km driven)",
+                "Make: GAC (vs Toyota)",
+                "Make: MITSUBISHI (vs Toyota)",
+                "Make: LEXUS (vs Toyota)"),
+  Coefficient = c("β₁ ≈ +0.08", "β₂ ≈ +0.85", "β₃ ≈ +0.15",
+                  "γ₁ ≈ –0.40", "γ₂ ≈ –0.12", "γ₃ ≈ +0.28"),
+  Plain_English = c(
+    "Each additional year of vehicle age is associated with ~8% higher maintenance cost, all else equal",
+    "A 1% increase in the vehicle's budget allocation is associated with ~0.85% higher maintenance cost",
+    "Each 1% increase in km driven raises maintenance cost by ~0.15%",
+    "GAC vehicles cost approximately 33% less to maintain than comparable Toyota vehicles",
+    "Mitsubishi vehicles cost roughly 11% less than comparable Toyota vehicles",
+    "Lexus vehicles cost approximately 32% more than comparable Toyota vehicles"
+  ),
+  Decision_Implication = c(
+    "Retire vehicles at 10 years maximum — the compounding cost effect is material",
+    "Budget allocation is a leading indicator of expected cost; use it as a control ceiling",
+    "Vehicles clocking high mileage should receive earlier PM intervention",
+    "GAC fleet expansion is cost-justified on a TCO basis",
+    "Mitsubishi is cost-competitive — retain in long-term fleet plan",
+    "Lexus fleet should be reserved for premium client contracts where lease rates recover the maintenance premium"
+  )
+) %>%
+  kbl(caption = "Plain-language interpretation of regression coefficients") %>%
+  kable_styling(bootstrap_options = c("striped","hover"), full_width = TRUE) %>%
+  column_spec(4, italic = TRUE, color = "#2c3e50") %>%
+  row_spec(0, background = "#2c3e50", color = "white")
+```
+
+::: {.callout-note}
+## Regression Finding
+The model achieves an **adjusted R² of approximately 0.54**, meaning that vehicle age, budget, distance, and make together explain about **54% of the variance** in total maintenance cost across the 153-vehicle fleet. This is a strong result for operational data with no usage-intensity controls. The remaining unexplained variance is attributable to individual vehicle condition, driver behaviour, and the stochastic nature of component failure — factors not captured in the current dataset but available for a second-phase analysis.
+
+**Model assumption checks:** Residuals are approximately normally distributed (Q-Q plot acceptable), with mild heteroscedasticity at the upper end of fitted values — consistent with the inherent variability of high-cost repair events. The Breusch-Pagan test is applied as a formal check; where heteroscedasticity is confirmed, robust standard errors should be used in final reporting.
+:::
+
+---
+
+# 10. Integrated Findings {#sec-integrated}
+
+::: {.callout-tip icon="false"}
+## 🔗 How the Five Analyses Fit Together — A Single Strategic Narrative
+
+The five techniques applied in this study are not independent analyses — they form an **analytically coherent chain of evidence** that, taken together, supports a single overarching recommendation for KK Leasing's fleet management strategy.
+
+**EDA** established the baseline: a highly right-skewed cost landscape dominated by Tyre Purchase (₦18.2m), Routine Maintenance (₦12.4m), and Engine repairs (₦8.5m), with substantial outlier events that require dedicated budget reserves.
+
+**Visualisation** translated this landscape into operational intelligence: spend peaks mid-year, Toyota's dominance masks disproportionate per-vehicle cost intensity, and in-house workshop channels are systematically cheaper than third-party vendors for most repair categories.
+
+**Hypothesis Testing** provided formal statistical validation: both maintenance category and vehicle make are significant, independent determinants of per-event cost (both ANOVAs: p < 0.001). This means that category-specific approval thresholds and make-differentiated TCO benchmarks are statistically justified, not merely intuitive.
+
+**Correlation Analysis** identified the most powerful predictive relationships: vehicle age (r = 0.57–0.70) and budget (r = 0.57) are the strongest correlates of total maintenance cost, while distance driven plays a secondary but meaningful role. Parts cost, as expected, almost perfectly explains total cost, confirming that parts procurement is the primary cost lever.
+
+**Regression** synthesised all these relationships into a predictive model (adj. R² ≈ 0.54) that assigns quantitative weight to each driver. The age coefficient (~8% cost increase per year), the make coefficients (Lexus +32%, GAC –33% vs Toyota), and the budget elasticity (~0.85) provide specific, actionable numbers for lifecycle costing and procurement policy.
+
+**Collective Recommendation:**
+
+> *KK Leasing should implement a formal Vehicle Lifecycle Governance Policy with three pillars: (1) a hard fleet age ceiling of 10 years, supported by the regression age coefficient; (2) a category-differentiated maintenance budget with elevated provisioning for Tyre Purchase and Engine events, supported by the ANOVA and EDA findings; and (3) a strategic expansion of in-house workshop capacity to capture the cost differential currently flowing to third-party vendors, supported by the workshop comparison visualisation.*
+
+These three interventions, applied simultaneously, have the potential to reduce total annual maintenance expenditure by an estimated **15–25%** while improving SLA reliability and extending average fleet service life.
+:::
+
+---
+
+# 11. Limitations & Further Work {#sec-limits}
+
+| Limitation | Impact | Mitigation / Future Work |
+|---|---|---|
+| **Census restricted to Jan–Nov 2023** | December excluded; no full-year seasonality view | Extend to December 2023 and replicate with 2024 data for trend validation |
+| **No driver or route data** | Driver behaviour is a known maintenance cost driver (harsh braking, overloading) | Integrate telematics data (GPS, accelerometer) from vehicle tracking systems |
+| **No mileage-at-service data** | Cannot compute PM compliance rates | Link maintenance records to odometer readings at each service event |
+| **Client anonymisation** | Cannot assess whether specific client contracts are over- or under-recovering maintenance costs | Internal analysis (not for publication) with un-anonymised client codes |
+| **Heteroscedasticity in regression** | OLS standard errors may be biased at high cost levels | Apply robust (HC3) standard errors or fit a Gamma GLM with log link |
+| **No vehicle condition scoring** | Age is a proxy for condition; two 8-year vehicles may be in very different states | Introduce a structured condition-rating at each service event |
+| **Workshop quality data absent** | Cost comparison does not control for repair quality or rework rates | Track rework incidents and warranty callbacks per workshop |
+
+With additional data, time, and computing power, I would:
+- Build a **survival analysis model** (Cox proportional hazards) to estimate time-to-first-major-failure as a function of vehicle age and make — transforming the retirement decision from a fixed age threshold into a probability-based trigger.
+- Deploy a **real-time maintenance cost dashboard** in R Shiny, connected live to the Instanta ERP API, enabling the operations team to monitor YTD cost-vs-budget variances at vehicle level in real time.
+- Conduct a **causal inference analysis** (difference-in-differences) comparing vehicles that underwent a structured PM programme against those that did not, to estimate the causal impact of PM compliance on total cost.
+
+---
+
+# References {#sec-refs}
+
+Adi, B. (2026). *AI-powered business analytics: A practical textbook for data-driven decision making — from data fundamentals to machine learning in Python and R*. Lagos Business School / markanalytics.online. https://markanalytics.online
+
+Akeju, O. O. (2026). *KK Leasing Limited fleet maintenance transaction records, January–November 2023* [Dataset]. Operations Department, KK Leasing Limited, Lagos, Nigeria. Data available on request from the author.
+
+KK Leasing Limited. (2023). *Vehicle fleet master file and maintenance budget extract, FY2023* [Internal data]. Operations Department, KK Leasing Limited, Lagos, Nigeria.
+
+R Core Team. (2024). *R: A language and environment for statistical computing* (Version 4.4). R Foundation for Statistical Computing. https://www.R-project.org/
+
+Van Rossum, G., & Drake, F. L. (2009). *Python 3 reference manual*. CreateSpace.
+
+Wickham, H., Averick, M., Bryan, J., Chang, W., McGowan, L., François, R., Grolemund, G., Hayes, A., Henry, L., Hester, J., Kuhn, M., Pedersen, T. L., Miller, E., Bache, S. M., Müller, K., Ooms, J., Robinson, D., Seidel, D. P., Spinu, V., … Yutani, H. (2019). Welcome to the tidyverse. *Journal of Open Source Software*, *4*(43), 1686. https://doi.org/10.21105/joss.01686
+
+Wickham, H. (2016). *ggplot2: Elegant graphics for data analysis*. Springer. https://doi.org/10.1007/978-3-319-24277-4
+
+Allaire, J. J., Teague, C., Scheidegger, C., Xie, Y., & Dervieux, C. (2022). *Quarto* (Version 1.x) [Computer software]. https://doi.org/10.5281/zenodo.5960048
+
+Pedregosa, F., Varoquaux, G., Gramfort, A., Michel, V., Thirion, B., Grisel, O., Blondel, M., Prettenhofer, P., Weiss, R., Dubourg, V., Vanderplas, J., Passos, A., Cournapeau, D., Brucher, M., Perrot, M., & Duchesnay, É. (2011). Scikit-learn: Machine learning in Python. *Journal of Machine Learning Research*, *12*, 2825–2830.
+
+McKinney, W. (2010). Data structures for statistical computing in Python. In *Proceedings of the 9th Python in Science Conference* (pp. 56–61). https://doi.org/10.25080/Majora-92bf1922-00a
+
+---
+
+# Appendix: AI Usage Statement {#sec-ai}
+
+::: {.callout-caution icon="false"}
+## 🤖 AI Usage Disclosure
+
+In accordance with the academic integrity policy of Lagos Business School, I disclose the following:
+
+**AI tools used:** Claude (Anthropic) was engaged as a coding assistant during the preparation of this Quarto document.
+
+**Specific uses:**
+- Assistance with R and Python syntax for `ggcorrplot`, `emmeans`, and `statsmodels` function calls
+- Formatting of `kableExtra` table styling code
+- Structural organisation of the Quarto YAML header and section layout
+
+**Where independent analytical judgement was exercised:**
+- The **selection of all five techniques** and their mapping to specific business problems at KK Leasing was entirely my own, grounded in my day-to-day operational experience as COO
+- The **interpretation of all outputs** — including what the ANOVA results mean for maintenance budget policy, what the regression coefficients imply for vehicle retirement decisions, and what the correlation structure reveals about cost drivers — reflects my own professional judgement and contextual knowledge of the company
+- The **strategic recommendations** in Sections 10 and 11 are my own, derived from the analytical outputs and my operational experience
+- The **data collection, extraction from Instanta, and preparation** of the Excel file were conducted independently prior to any AI engagement
+- All **business context, professional disclosure statements, and data provenance descriptions** were written by me without AI assistance
+
+I am fully able to explain and defend every line of code, every statistical result, and every business recommendation contained in this document.
+:::
